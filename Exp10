@@ -1,109 +1,99 @@
 #include <stdio.h>
-#include <pthread.h>
+#include <stdlib.h>
 #include <semaphore.h>
 #include <unistd.h>
+#include <pthread.h>
 
-sem_t resource;
-sem_t rmutex;
-sem_t wmutex;
+sem_t mutex;
+sem_t wrt;
 sem_t readTry;
+sem_t wmutex;
 
-int read_count = 0;
-int write_count = 0;
-int data = 0;
+int readcount=0;
+int writecount=0;
 
-void *reader(void *arg)
-{
-    int id = *(int *)arg;
+void *reader(void *arg){
+    int id=*((int*)arg);
 
-    while (1)
-    {
+    sem_wait(&readTry);
+    sem_wait(&mutex);
+
+    readcount++;
+    if(readcount==1)
+        sem_wait(&wrt);
+
+    sem_post(&mutex);
+    sem_post(&readTry);
+
+    printf("Reader %d is READING\n",id);
+    sleep(1);
+
+    sem_wait(&mutex);
+
+    readcount--;
+    if(readcount==0)
+        sem_post(&wrt);
+
+    sem_post(&mutex);
+    return NULL;
+}
+
+void *writer(void *arg){
+    int id=*((int*)arg);
+
+    sem_wait(&wmutex);
+    writecount++;
+    if(writecount==1)
         sem_wait(&readTry);
-        sem_wait(&rmutex);
+    sem_post(&wmutex);
 
-        read_count++;
-        if (read_count == 1)
-            sem_wait(&resource);
+    sem_wait(&wrt);
 
-        sem_post(&rmutex);
+    printf("Writer %d is WRITING\n",id);
+    sleep(1);
+
+    sem_post(&wrt);
+
+    sem_wait(&wmutex);
+    writecount--;
+    if(writecount==0)
         sem_post(&readTry);
+    sem_post(&wmutex);
 
-        printf("Reader %d is reading data = %d\n", id, data);
-        sleep(1);
-
-        sem_wait(&rmutex);
-
-        read_count--;
-        if (read_count == 0)
-            sem_post(&resource);
-
-        sem_post(&rmutex);
-
-        sleep(1);
-    }
+    return NULL;
 }
 
-void *writer(void *arg)
-{
-    int id = *(int *)arg;
+int main(){
+    int rCount,wCount;
 
-    while (1)
-    {
-        sem_wait(&wmutex);
+    printf("Enter number of readers: ");
+    scanf("%d",&rCount);
+    printf("Enter number of writers: ");
+    scanf("%d",&wCount);
 
-        write_count++;
-        if (write_count == 1)
-            sem_wait(&readTry);
+    pthread_t r[rCount], w[wCount];
+    int rId[rCount], wId[wCount];
 
-        sem_post(&wmutex);
+    sem_init(&mutex,0,1);
+    sem_init(&wrt,0,1);
+    sem_init(&readTry,0,1);
+    sem_init(&wmutex,0,1);
 
-        sem_wait(&resource);
-
-        data++;
-        printf("Writer %d is writing data = %d\n", id, data);
-        sleep(1);
-
-        sem_post(&resource);
-
-        sem_wait(&wmutex);
-
-        write_count--;
-        if (write_count == 0)
-            sem_post(&readTry);
-
-        sem_post(&wmutex);
-
-        sleep(1);
-    }
-}
-
-int main()
-{
-    pthread_t r[5], w[2];
-    int r_id[5], w_id[2];
-
-    sem_init(&resource, 0, 1);
-    sem_init(&rmutex, 0, 1);
-    sem_init(&wmutex, 0, 1);
-    sem_init(&readTry, 0, 1);
-
-    for (int i = 0; i < 5; i++)
-    {
-        r_id[i] = i + 1;
-        pthread_create(&r[i], NULL, reader, &r_id[i]);
+    for(int i=0;i<rCount;i++){
+        rId[i]=i+1;
+        pthread_create(&r[i],NULL,reader,&rId[i]);
     }
 
-    for (int i = 0; i < 2; i++)
-    {
-        w_id[i] = i + 1;
-        pthread_create(&w[i], NULL, writer, &w_id[i]);
+    for(int i=0;i<wCount;i++){
+        wId[i]=i+1;
+        pthread_create(&w[i],NULL,writer,&wId[i]);
     }
 
-    for (int i = 0; i < 5; i++)
-        pthread_join(r[i], NULL);
+    for(int i=0;i<rCount;i++)
+        pthread_join(r[i],NULL);
 
-    for (int i = 0; i < 2; i++)
-        pthread_join(w[i], NULL);
+    for(int i=0;i<wCount;i++)
+        pthread_join(w[i],NULL);
 
     return 0;
 }
